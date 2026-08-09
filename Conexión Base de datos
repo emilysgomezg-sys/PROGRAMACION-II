@@ -1,0 +1,412 @@
+package factura;
+
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingConstants;
+import javax.swing.table.DefaultTableModel;
+
+public class Factura extends JFrame {
+
+    private JTextField txtNumFactura;
+    private JTextField txtSerie;
+    private JTextField txtFecha;
+    private JTextField txtCliente;
+    private JTextField txtNit;
+    
+    // Componentes para selección de producto
+    private JComboBox<String> cbxProducto;
+    private JTextField txtPrecio;
+    private JSpinner spnCantidad;
+    
+    // Tabla de Detalle
+    private JTable tblDetalle;
+    private DefaultTableModel modeloTabla;
+    
+    // Resumen de Totales
+    private JTextField txtSubtotal;
+    private JTextField txtIva;
+    private JTextField txtTotal;
+    
+    // Botones de Operación
+    private JButton btnAgregar;
+    private JButton btnEliminar;
+    private JButton btnGuardar;
+    private JButton btnNuevo;
+
+    // IVA Guatemala (12% Régimen General SAT)
+    private static final double PORCENTAJE_IVA = 0.12;
+
+    public Factura() {
+        setTitle("Sistema de Ventas - Emisión de Factura FEL (Guatemala)");
+        setSize(880, 620);
+        setMinimumSize(new Dimension(820, 580));
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout(10, 10));
+
+        iniciarComponentes();
+        cargarDatosIniciales();
+    }
+
+    private void iniciarComponentes() {
+        //  Datos del Comprobante y Cliente (SAT)
+        JPanel pnlNorte = new JPanel(new GridBagLayout());
+        pnlNorte.setBorder(BorderFactory.createTitledBorder("Datos de la Factura y Contribuyente"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        // Fila 0: Serie, Número de Factura FEL y Fecha
+        gbc.gridx = 0; gbc.gridy = 0;
+        pnlNorte.add(new JLabel("Serie FEL:"), gbc);
+        
+        txtSerie = new JTextField(6);
+        txtSerie.setEditable(false);
+        txtSerie.setFont(new Font("SansSerif", Font.BOLD, 12));
+        gbc.gridx = 1;
+        pnlNorte.add(txtSerie, gbc);
+
+        gbc.gridx = 2;
+        pnlNorte.add(new JLabel("N° Autorización / DTE:"), gbc);
+        
+        txtNumFactura = new JTextField(12);
+        txtNumFactura.setEditable(false);
+        txtNumFactura.setFont(new Font("SansSerif", Font.BOLD, 12));
+        gbc.gridx = 3;
+        pnlNorte.add(txtNumFactura, gbc);
+
+        gbc.gridx = 4;
+        pnlNorte.add(new JLabel("Fecha de Emisión:"), gbc);
+        
+        txtFecha = new JTextField(9);
+        txtFecha.setEditable(false);
+        gbc.gridx = 5;
+        pnlNorte.add(txtFecha, gbc);
+
+        // Fila 1: NIT / DPI y Nombre del Cliente
+        gbc.gridx = 0; gbc.gridy = 1;
+        pnlNorte.add(new JLabel("NIT / DPI:"), gbc);
+        
+        txtNit = new JTextField(10);
+        gbc.gridx = 1;
+        pnlNorte.add(txtNit, gbc);
+
+        gbc.gridx = 2;
+        pnlNorte.add(new JLabel("Nombre o Razón Social:"), gbc);
+        
+        txtCliente = new JTextField(25);
+        gbc.gridx = 3; gbc.gridwidth = 3;
+        pnlNorte.add(txtCliente, gbc);
+        gbc.gridwidth = 1;
+
+        add(pnlNorte, BorderLayout.NORTH);
+
+        // --- 2. PANEL CENTRO: Selección de Productos y Tabla ---
+        JPanel pnlCentro = new JPanel(new BorderLayout(5, 5));
+
+        JPanel pnlEntradaProducto = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        pnlEntradaProducto.setBorder(BorderFactory.createTitledBorder("Detalle de Mercadería"));
+
+        cbxProducto = new JComboBox<>(new String[]{
+            "-- Seleccionar Producto --",
+            "Laptop Asus ROG - Q9500.00",
+            "Mouse Inalámbrico Logitech - Q195.00",
+            "Teclado Mecánico RGB - Q580.00",
+            "Monitor 27'' LG UltraGear - Q2400.00",
+            "Impresora Multifuncional Epson - Q1850.00"
+        });
+        cbxProducto.addActionListener(e -> actualizarPrecioProducto());
+
+        txtPrecio = new JTextField(7);
+        txtPrecio.setEditable(false);
+        spnCantidad = new JSpinner(new SpinnerNumberModel(1, 1, 100, 1));
+        
+        btnAgregar = new JButton("Agregar Producto");
+        btnAgregar.addActionListener(e -> agregarProducto());
+
+        pnlEntradaProducto.add(new JLabel("Producto:"));
+        pnlEntradaProducto.add(cbxProducto);
+        pnlEntradaProducto.add(new JLabel("Precio (Q):"));
+        pnlEntradaProducto.add(txtPrecio);
+        pnlEntradaProducto.add(new JLabel("Cantidad:"));
+        pnlEntradaProducto.add(spnCantidad);
+        pnlEntradaProducto.add(btnAgregar);
+
+        pnlCentro.add(pnlEntradaProducto, BorderLayout.NORTH);
+
+        // Tabla de ítems agregados
+        String[] columnas = {"#", "Descripción del Producto", "Cantidad", "Precio Unitario (Q)", "Subtotal (Q)"};
+        modeloTabla = new DefaultTableModel(columnas, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        tblDetalle = new JTable(modeloTabla);
+        tblDetalle.setRowHeight(22);
+        
+        JScrollPane scrollTabla = new JScrollPane(tblDetalle);
+        pnlCentro.add(scrollTabla, BorderLayout.CENTER);
+
+        add(pnlCentro, BorderLayout.CENTER);
+
+        // --- 3. PANEL SUR: Acciones y Totales ---
+        JPanel pnlSur = new JPanel(new BorderLayout(10, 10));
+
+        JPanel pnlBotones = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 10));
+        btnEliminar = new JButton("Eliminar Ítem");
+        btnEliminar.addActionListener(e -> eliminarProducto());
+        
+        btnGuardar = new JButton("Emitir Factura FEL");
+        btnGuardar.setBackground(new Color(34, 139, 34));
+        btnGuardar.setForeground(Color.WHITE);
+        btnGuardar.addActionListener(e -> guardarFactura());
+
+        btnNuevo = new JButton("Nueva Factura");
+        btnNuevo.addActionListener(e -> limpiarFormulario());
+
+        pnlBotones.add(btnEliminar);
+        pnlBotones.add(btnGuardar);
+        pnlBotones.add(btnNuevo);
+
+        JPanel pnlTotales = new JPanel(new GridBagLayout());
+        GridBagConstraints gbcTot = new GridBagConstraints();
+        gbcTot.insets = new Insets(2, 5, 2, 5);
+        gbcTot.anchor = GridBagConstraints.EAST;
+
+        txtSubtotal = crearCampoTotal();
+        txtIva = crearCampoTotal();
+        txtTotal = crearCampoTotal();
+        txtTotal.setFont(new Font("SansSerif", Font.BOLD, 14));
+
+        gbcTot.gridx = 0; gbcTot.gridy = 0; pnlTotales.add(new JLabel("Subtotal Neto (Q):"), gbcTot);
+        gbcTot.gridx = 1; pnlTotales.add(txtSubtotal, gbcTot);
+        
+        gbcTot.gridx = 0; gbcTot.gridy = 1; pnlTotales.add(new JLabel("IVA (12% SAT) (Q):"), gbcTot);
+        gbcTot.gridx = 1; pnlTotales.add(txtIva, gbcTot);
+        
+        gbcTot.gridx = 0; gbcTot.gridy = 2; pnlTotales.add(new JLabel("Total a Pagar (Q):"), gbcTot);
+        gbcTot.gridx = 1; pnlTotales.add(txtTotal, gbcTot);
+
+        pnlSur.add(pnlBotones, BorderLayout.WEST);
+        pnlSur.add(pnlTotales, BorderLayout.EAST);
+
+        add(pnlSur, BorderLayout.SOUTH);
+    }
+
+    private JTextField crearCampoTotal() {
+        JTextField txt = new JTextField("0.00", 9);
+        txt.setEditable(false);
+        txt.setHorizontalAlignment(SwingConstants.RIGHT);
+        return txt;
+    }
+
+    private void cargarDatosIniciales() {
+        txtSerie.setText("A8F3B912");
+        txtNumFactura.setText(String.valueOf((int)(Math.random() * 9000000 + 1000000)));
+        // Formato estándar YYYY-MM-DD para compatibilidad con el tipo DATE de MySQL
+        txtFecha.setText(new SimpleDateFormat("yyyy-MM-dd").format(new Date()));
+        txtNit.setText("C/F");
+        calcularTotales();
+    }
+
+    private void actualizarPrecioProducto() {
+        int index = cbxProducto.getSelectedIndex();
+        if (index <= 0) {
+            txtPrecio.setText("");
+            return;
+        }
+        String item = (String) cbxProducto.getSelectedItem();
+        double precio = Double.parseDouble(item.substring(item.lastIndexOf("Q") + 1));
+        txtPrecio.setText(String.format("%.2f", precio));
+    }
+
+    private void agregarProducto() {
+        if (cbxProducto.getSelectedIndex() <= 0) {
+            JOptionPane.showMessageDialog(this, "Debe seleccionar un producto.", "Advertencia", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String itemStr = (String) cbxProducto.getSelectedItem();
+        String nombreProd = itemStr.split(" - ")[0];
+        double precio = Double.parseDouble(txtPrecio.getText().replace(",", "."));
+        int cantidad = (int) spnCantidad.getValue();
+        double subtotalItem = precio * cantidad;
+
+        modeloTabla.addRow(new Object[]{
+            modeloTabla.getRowCount() + 1,
+            nombreProd,
+            cantidad,
+            String.format("%.2f", precio),
+            String.format("%.2f", subtotalItem)
+        });
+
+        calcularTotales();
+        cbxProducto.setSelectedIndex(0);
+        txtPrecio.setText("");
+        spnCantidad.setValue(1);
+    }
+
+    private void eliminarProducto() {
+        int filaSeleccionada = tblDetalle.getSelectedRow();
+        if (filaSeleccionada == -1) {
+            JOptionPane.showMessageDialog(this, "Seleccione una fila de la tabla para eliminar.", "Advertencia", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        modeloTabla.removeRow(filaSeleccionada);
+        reordenarIds();
+        calcularTotales();
+    }
+
+    private void reordenarIds() {
+        for (int i = 0; i < modeloTabla.getRowCount(); i++) {
+            modeloTabla.setValueAt(i + 1, i, 0);
+        }
+    }
+
+    private void calcularTotales() {
+        double subtotalMontoTotal = 0.0;
+        
+        for (int i = 0; i < modeloTabla.getRowCount(); i++) {
+            double val = Double.parseDouble(modeloTabla.getValueAt(i, 4).toString().replace(",", "."));
+            subtotalMontoTotal += val;
+        }
+
+        double baseImponible = subtotalMontoTotal / (1 + PORCENTAJE_IVA);
+        double montoIva = subtotalMontoTotal - baseImponible;
+
+        txtSubtotal.setText(String.format("%.2f", baseImponible));
+        txtIva.setText(String.format("%.2f", montoIva));
+        txtTotal.setText(String.format("%.2f", subtotalMontoTotal));
+    }
+
+    private void guardarFactura() {
+        if (txtCliente.getText().trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Ingrese el nombre o razón social del cliente.", "Validación SAT", JOptionPane.ERROR_MESSAGE);
+            txtCliente.requestFocus();
+            return;
+        }
+        if (txtNit.getText().trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Ingrese el NIT del cliente (o digite C/F).", "Validación SAT", JOptionPane.ERROR_MESSAGE);
+            txtNit.requestFocus();
+            return;
+        }
+        if (modeloTabla.getRowCount() == 0) {
+            JOptionPane.showMessageDialog(this, "La factura debe incluir al menos un producto.", "Validación de Venta", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        Connection cn = null;
+        try {
+            cn = Conexion.getConexion();
+            cn.setAutoCommit(false); // Iniciar transacción
+
+            // 1. Insertar en tabla 'factura'
+            String sqlFactura = "INSERT INTO factura (serie, numero_dte, fecha, nit, cliente, subtotal, iva, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            PreparedStatement pstFactura = cn.prepareStatement(sqlFactura, Statement.RETURN_GENERATED_KEYS);
+            
+            pstFactura.setString(1, txtSerie.getText());
+            pstFactura.setString(2, txtNumFactura.getText());
+            pstFactura.setString(3, txtFecha.getText());
+            pstFactura.setString(4, txtNit.getText());
+            pstFactura.setString(5, txtCliente.getText());
+            pstFactura.setDouble(6, Double.parseDouble(txtSubtotal.getText().replace(",", ".")));
+            pstFactura.setDouble(7, Double.parseDouble(txtIva.getText().replace(",", ".")));
+            pstFactura.setDouble(8, Double.parseDouble(txtTotal.getText().replace(",", ".")));
+            
+            pstFactura.executeUpdate();
+
+            // Obtener el ID autogenerado de la factura
+            ResultSet rs = pstFactura.getGeneratedKeys();
+            int idFacturaGenerado = 0;
+            if (rs.next()) {
+                idFacturaGenerado = rs.getInt(1);
+            }
+
+            // 2. Insertar en tabla 'detalle_factura'
+            String sqlDetalle = "INSERT INTO detalle_factura (id_factura, descripcion, cantidad, precio_unitario, subtotal) VALUES (?, ?, ?, ?, ?)";
+            PreparedStatement pstDetalle = cn.prepareStatement(sqlDetalle);
+
+            for (int i = 0; i < modeloTabla.getRowCount(); i++) {
+                pstDetalle.setInt(1, idFacturaGenerado);
+                pstDetalle.setString(2, modeloTabla.getValueAt(i, 1).toString());
+                pstDetalle.setInt(3, Integer.parseInt(modeloTabla.getValueAt(i, 2).toString()));
+                pstDetalle.setDouble(4, Double.parseDouble(modeloTabla.getValueAt(i, 3).toString().replace(",", ".")));
+                pstDetalle.setDouble(5, Double.parseDouble(modeloTabla.getValueAt(i, 4).toString().replace(",", ".")));
+                pstDetalle.executeUpdate();
+            }
+
+            // Confirmar transacción
+            cn.commit();
+
+            String mensaje = String.format("Factura Guardada en la Base de Datos con Éxito\n" +
+                    "Serie: %s | DTE: %s\n" +
+                    "NIT Cliente: %s\n" +
+                    "Cliente: %s\n" +
+                    "Total Certificado: Q %s", 
+                    txtSerie.getText(), txtNumFactura.getText(), txtNit.getText(), txtCliente.getText(), txtTotal.getText());
+
+            JOptionPane.showMessageDialog(this, mensaje, "Guardado Exitoso", JOptionPane.INFORMATION_MESSAGE);
+            limpiarFormulario();
+
+        } catch (Exception e) {
+            if (cn != null) {
+                try {
+                    cn.rollback(); // Cancelar cambios si ocurre un error
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            }
+            JOptionPane.showMessageDialog(this, "Error al guardar en la base de datos:\n" + e.getMessage(), "Error SQL", JOptionPane.ERROR_MESSAGE);
+        } finally {
+            if (cn != null) {
+                try {
+                    cn.close();
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private void limpiarFormulario() {
+        txtCliente.setText("");
+        cbxProducto.setSelectedIndex(0);
+        txtPrecio.setText("");
+        spnCantidad.setValue(1);
+        modeloTabla.setRowCount(0);
+        cargarDatosIniciales();
+    }
+
+    public static void main(String[] args) {
+        java.awt.EventQueue.invokeLater(() -> {
+            new Factura().setVisible(true);
+        });
+    }
+}
